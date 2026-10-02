@@ -1,42 +1,45 @@
 # AIM OSI
 
-Open Source Community Intelligence — an extensible Kubernetes-first MVP for answering what happened, what is happening, and what matters next.
+Open source community intelligence, with selectable workspaces for Kubernetes, Prometheus, etcd, containerd, Argo CD, and OpenTelemetry.
 
 ## Run locally
 
-Requirements: Python 3.11+ (the app uses only the standard library).
+Requires Python 3.11+; runtime dependencies use the Python standard library.
 
 ```sh
-cd /home/nickbrian/Projects/aim-osi
 python3 app.py
 ```
 
-Open http://localhost:8000. The default `DEMO_MODE=true` clearly labels seeded data as illustrative. Use the workspace selector to choose Kubernetes, Prometheus, etcd, containerd, Argo CD, or OpenTelemetry. Each workspace tracks its listed primary GitHub repository; Kubernetes also loads official SIG meeting metadata. Set `DEMO_MODE=false` to hide demo records. Live integrations require network access; set `GITHUB_TOKEN` to raise GitHub API rate limits. Set both `YOUTUBE_API_KEY` and an official `YOUTUBE_PLAYLIST_ID` to enable playlist imports. GitHub OAuth is intentionally not enabled until callback/session secrets are configured; public data needs no login.
+Open `http://localhost:8000`. The local preview starts with clearly labeled demo records. Set `DEMO_MODE=false` to show only verified source data. Select a workspace and use **Sync sources** to pull public GitHub activity, Kubernetes SIG metadata, and recent videos from the project’s configured YouTube channel/feed.
 
-## What is included
+## Deploy on Vercel
 
-- Responsive dashboard, intelligence feed, weekly digest, change summary, community/project, meetings, events, good-first-issues, and automation views.
-- JSON API at `/api/*`, health endpoint `/health`, and OpenAPI-style endpoint listing at `/api`.
-- Selectable community workspaces backed by a catalog of primary repositories, the official Kubernetes SIG metadata adapter (`kubernetes/community` `sigs.yaml`), public GitHub API adapter, and opt-in YouTube API adapter.
-- Provenance on normalized records; connector health and task run history; graceful per-source failure handling.
-- SQLite for zero-setup preview with a normalized relational schema and startup migrations. PostgreSQL is the production database target, but runtime wiring is not included in this preview.
-- GitHub Actions CI, Dockerfile, security headers, request validation, and tests.
+Import this repository in Vercel with the project root set to the repository root. `vercel.json` publishes the `public/` frontend and routes `/api/*` to the Python function in `api/index.py`. The serverless app runs in live mode and keeps only a temporary SQLite cache in `/tmp`; source data is refreshed on demand. Vercel’s temporary filesystem is not durable storage, so this preview does not claim persistent task history.
 
-## Configuration
+Optional GitHub sign-in requires these Vercel environment variables:
 
-Copy `.env.example` to `.env` and export the values in your shell or use Docker Compose. The server reads `PORT`, `DATABASE_PATH`, `DEMO_MODE`, `GITHUB_TOKEN`, `YOUTUBE_API_KEY`, and `YOUTUBE_PLAYLIST_ID`. Never commit credentials. The zero-dependency local preview uses SQLite.
+- `GITHUB_CLIENT_ID`
+- `GITHUB_CLIENT_SECRET`
+- `SESSION_SECRET` (long random value)
+- `GITHUB_OAUTH_REDIRECT_URI` (for example `https://YOUR_DOMAIN/api/auth/callback`)
 
-## API
+Create a GitHub OAuth App with the callback URL above. The app requests only `read:user`, stores a signed, HTTP-only profile session, and does not retain the OAuth access token. Public GitHub data can be read without a user login; `GITHUB_TOKEN` is optional and increases API rate limits.
 
-`GET /api` lists endpoints. `GET /api/workspaces` returns the selectable community catalog. Data routes accept `?community=<workspace-id>` (for example `/api/overview?community=prometheus`); without it, they use Kubernetes. `POST /api/sync` accepts a `community` id and queues a best-effort refresh for its supported connectors.
+The YouTube connector reads public official-channel Atom feeds; it requires no YouTube API key. Video results are limited to the previous seven days. A project that has no clearly identified official channel uses the CNCF channel with title/description filtering; the source channel is always linked and the embedded YouTube player remains subject to the video's embed settings.
 
-## Data integrity and limitations
+## Features and routes
 
-Seeded records are marked `demo`; never treat them as current community facts. In live mode the UI only presents records successfully returned by public sources, with source links and retrieval timestamps. Calendar schedules are links/metadata only; event occurrences are not guessed from recurring text. Summaries are extractive/factual fallback copy, not LLM output. OAuth, private calendars, email delivery, and production PostgreSQL runtime wiring are not enabled in this preview.
+- Weekly digest combines the former intelligence feed and “This week” page, including searchable recent activity and playable YouTube embeds.
+- Community overview, repositories, good-first issues, meetings, events, integrations, and sync status.
+- `/api/workspaces`, `/api/overview?community=<id>`, `/api/digest?community=<id>`, `/api/automation?community=<id>`, `/api/sync`, and `/health`.
+- Provenance links and retrieval/publication dates are kept with imported source records.
 
 ## Validation
 
 ```sh
+PYTHONPYCACHEPREFIX=/tmp/aim-osi-pycache python3 -m py_compile app.py api/index.py
 python3 -m unittest discover -s tests -v
-python3 -m py_compile app.py
+node --check web/app.js
 ```
+
+Live GitHub and YouTube access depends on the deployed function being permitted to make outbound HTTPS requests. Configure Vercel environment values in its project settings; secrets should not be committed.

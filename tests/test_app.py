@@ -77,6 +77,13 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(records[0]["meeting_url"], "https://meet.example.org")
         self.assertEqual(records[0]["archive_url"], "https://notes.example.org")
 
+    def test_youtube_feed_keeps_only_recent_valid_entries(self):
+        feed = '''<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><yt:videoId>abcdefghijk</yt:videoId><title>Recent official recording</title><published>2026-10-02T10:00:00+00:00</published></entry><entry><yt:videoId>oldabcdefgh</yt:videoId><title>Old recording</title><published>2026-09-20T10:00:00+00:00</published></entry><entry><title>Missing id</title><published>2026-10-02T10:00:00+00:00</published></entry></feed>'''
+        parsed = app.parse_youtube_feed(feed, "kubernetes", app.datetime(2026, 10, 1, tzinfo=app.timezone.utc))
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0]["source_id"], "abcdefghijk")
+        self.assertEqual(parsed[0]["url"], "https://www.youtube.com/watch?v=abcdefghijk")
+
     def test_github_adapter_normalizes_sources_and_is_idempotent(self):
         def fixture(url):
             if "/pulls?" in url:

@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -19,8 +20,8 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
-DEMO = os.getenv("DEMO_MODE", "true").lower() in {"1", "true", "yes"}
-DB_PATH = Path(os.getenv("DATABASE_PATH", str(ROOT / "data" / "aimosi.sqlite3")))
+DEMO = os.getenv("DEMO_MODE", "false" if os.getenv("VERCEL") else "true").lower() in {"1", "true", "yes"}
+DB_PATH = Path(os.getenv("DATABASE_PATH", "/tmp/aim-osi.sqlite3" if os.getenv("VERCEL") else str(ROOT / "data" / "aimosi.sqlite3")))
 PORT = int(os.getenv("PORT", "8000"))
 LOCK = threading.Lock()
 TASK_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="aimosi-sync")
@@ -29,12 +30,12 @@ SYNC_REQUESTS: dict[str, float] = {}
 # A workspace is a public community plus its authoritative primary repository.
 # Additional repositories can be added without changing the data model.
 COMMUNITY_CATALOG = {
-    "kubernetes": {"id":"kubernetes","name":"Kubernetes","description":"Container orchestration community","website":"https://kubernetes.io","repo":"kubernetes/kubernetes","repo_name":"Kubernetes","repo_description":"Production-grade container orchestration","source_url":"https://github.com/kubernetes/community","icon":"K"},
-    "prometheus": {"id":"prometheus","name":"Prometheus","description":"Monitoring and alerting toolkit","website":"https://prometheus.io","repo":"prometheus/prometheus","repo_name":"Prometheus","repo_description":"The Prometheus monitoring system and time series database","source_url":"https://github.com/prometheus/prometheus","icon":"P"},
-    "etcd": {"id":"etcd","name":"etcd","description":"Distributed reliable key-value store","website":"https://etcd.io","repo":"etcd-io/etcd","repo_name":"etcd","repo_description":"Distributed reliable key-value store for the most critical data of a distributed system","source_url":"https://github.com/etcd-io/etcd","icon":"e"},
-    "containerd": {"id":"containerd","name":"containerd","description":"Industry-standard container runtime","website":"https://containerd.io","repo":"containerd/containerd","repo_name":"containerd","repo_description":"An industry-standard container runtime","source_url":"https://github.com/containerd/containerd","icon":"c"},
-    "argo-cd": {"id":"argo-cd","name":"Argo CD","description":"Declarative GitOps continuous delivery for Kubernetes","website":"https://argo-cd.readthedocs.io","repo":"argoproj/argo-cd","repo_name":"Argo CD","repo_description":"Declarative continuous delivery with GitOps","source_url":"https://github.com/argoproj/argo-cd","icon":"A"},
-    "opentelemetry": {"id":"opentelemetry","name":"OpenTelemetry","description":"Observability framework and ecosystem","website":"https://opentelemetry.io","repo":"open-telemetry/opentelemetry-collector","repo_name":"OpenTelemetry Collector","repo_description":"Vendor-agnostic way to receive, process and export telemetry data","source_url":"https://github.com/open-telemetry/opentelemetry-collector","icon":"O"},
+    "kubernetes": {"id":"kubernetes","name":"Kubernetes","description":"Container orchestration community","website":"https://kubernetes.io","repo":"kubernetes/kubernetes","repo_name":"Kubernetes","repo_description":"Production-grade container orchestration","source_url":"https://github.com/kubernetes/community","youtube_url":"https://www.youtube.com/kubernetescommunity","youtube_user":"kubernetescommunity","youtube_terms":["kubernetes","kubecon","k8s"],"icon":"K"},
+    "prometheus": {"id":"prometheus","name":"Prometheus","description":"Monitoring and alerting toolkit","website":"https://prometheus.io","repo":"prometheus/prometheus","repo_name":"Prometheus","repo_description":"The Prometheus monitoring system and time series database","source_url":"https://github.com/prometheus/prometheus","youtube_url":"https://www.youtube.com/@cncf","youtube_channel":"UCvqbFHwN-nwalWPjPUKpvTA","youtube_terms":["prometheus","promcon"],"icon":"P"},
+    "etcd": {"id":"etcd","name":"etcd","description":"Distributed reliable key-value store","website":"https://etcd.io","repo":"etcd-io/etcd","repo_name":"etcd","repo_description":"Distributed reliable key-value store for the most critical data of a distributed system","source_url":"https://github.com/etcd-io/etcd","youtube_url":"https://www.youtube.com/channel/UC7tUWR24I5AR9NMsG-NYBlg","youtube_channel":"UC7tUWR24I5AR9NMsG-NYBlg","youtube_terms":["etcd"],"icon":"e"},
+    "containerd": {"id":"containerd","name":"containerd","description":"Industry-standard container runtime","website":"https://containerd.io","repo":"containerd/containerd","repo_name":"containerd","repo_description":"An industry-standard container runtime","source_url":"https://github.com/containerd/containerd","youtube_url":"https://www.youtube.com/@CNCFcontainerd","youtube_user":"CNCFcontainerd","youtube_terms":["containerd"],"icon":"c"},
+    "argo-cd": {"id":"argo-cd","name":"Argo CD","description":"Declarative GitOps continuous delivery for Kubernetes","website":"https://argo-cd.readthedocs.io","repo":"argoproj/argo-cd","repo_name":"Argo CD","repo_description":"Declarative continuous delivery with GitOps","source_url":"https://github.com/argoproj/argo-cd","youtube_url":"https://www.youtube.com/@cncf","youtube_channel":"UCvqbFHwN-nwalWPjPUKpvTA","youtube_terms":["argo project","argo cd","argocd","argocon"],"icon":"A"},
+    "opentelemetry": {"id":"opentelemetry","name":"OpenTelemetry","description":"Observability framework and ecosystem","website":"https://opentelemetry.io","repo":"open-telemetry/opentelemetry-collector","repo_name":"OpenTelemetry Collector","repo_description":"Vendor-agnostic way to receive, process and export telemetry data","source_url":"https://github.com/open-telemetry/opentelemetry-collector","youtube_url":"https://www.youtube.com/channel/UCHZDBZTIfdy94xMjMKz-_MA","youtube_channel":"UCHZDBZTIfdy94xMjMKz-_MA","youtube_terms":["opentelemetry","opentelemetry collector","otel"],"icon":"O"},
 }
 
 
@@ -119,6 +120,50 @@ def github_get(url: str) -> object:
     req = Request(url, headers=headers)
     with urlopen(req, timeout=12) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def parse_youtube_feed(raw: bytes | str, community_id: str, cutoff: datetime | None = None) -> list[dict]:
+    """Parse YouTube's public Atom feed and keep only videos published in the last week."""
+    cutoff = cutoff or (datetime.now(timezone.utc) - timedelta(days=7))
+    root = ET.fromstring(raw)
+    atom = "{http://www.w3.org/2005/Atom}"
+    yt = "{http://www.youtube.com/xml/schemas/2015}"
+    videos = []
+    for entry in root.findall(f"{atom}entry"):
+        video_id = entry.findtext(f"{yt}videoId")
+        published = entry.findtext(f"{atom}published")
+        if not video_id or not published:
+            continue
+        try:
+            published_at = datetime.fromisoformat(published.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if published_at < cutoff:
+            continue
+        videos.append({
+            "id": f"youtube-{community_id}-{video_id}", "community_id": community_id,
+            "kind": "video", "title": entry.findtext(f"{atom}title") or "YouTube video",
+            "summary": entry.findtext("{http://search.yahoo.com/mrss/}group/{http://search.yahoo.com/mrss/}description") or "",
+            "url": f"https://www.youtube.com/watch?v={video_id}", "published_at": published,
+            "source": f"https://www.youtube.com/watch?v={video_id}", "source_id": video_id,
+        })
+    return videos
+
+
+def youtube_feed_url(workspace: dict) -> str:
+    if workspace.get("youtube_channel"):
+        return "https://www.youtube.com/feeds/videos.xml?channel_id=" + workspace["youtube_channel"]
+    channel_page = workspace.get("youtube_url")
+    if channel_page:
+        req = Request(channel_page, headers={"User-Agent": "Mozilla/5.0 (compatible; AIM-OSI/0.1)"})
+        with urlopen(req, timeout=12) as response:
+            html = response.read(2_000_000).decode("utf-8", "replace")
+        match = re.search(r'"externalId"\s*:\s*"(UC[\w-]{20,})"', html) or re.search(r'<meta\s+itemprop="channelId"\s+content="(UC[\w-]{20,})"', html)
+        if match:
+            return "https://www.youtube.com/feeds/videos.xml?channel_id=" + match.group(1)
+    if workspace.get("youtube_user"):
+        return "https://www.youtube.com/feeds/videos.xml?user=" + workspace["youtube_user"]
+    raise RuntimeError("No official YouTube feed is configured for this workspace")
 
 
 def parse_kubernetes_sigs(raw: str) -> list[dict]:
@@ -238,24 +283,20 @@ def sync_connector(name: str) -> dict:
                         c.execute("INSERT INTO signals(id,community_id,project_id,kind,title,summary,url,published_at,source,source_id,retrieved_at,demo,last_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET community_id=excluded.community_id,project_id=excluded.project_id,title=excluded.title,summary=excluded.summary,url=excluded.url,published_at=excluded.published_at,source=excluded.source,retrieved_at=excluded.retrieved_at,last_updated_at=excluded.last_updated_at", (f"github-{sid}", community_id, community_id, actual_kind, title, summary, item.get("html_url"), item.get("published_at") or item.get("created_at"), url, sid, stamp, item.get("updated_at") or item.get("published_at")))
                         count += 1
         elif connector == "youtube":
-            key = os.getenv("YOUTUBE_API_KEY")
-            if not key:
-                raise RuntimeError("YOUTUBE_API_KEY is not configured")
-            # Use a configured official playlist rather than search results, which can be misattributed.
-            playlist = os.getenv("YOUTUBE_PLAYLIST_ID")
-            if not playlist:
-                raise RuntimeError("YOUTUBE_PLAYLIST_ID is not configured; use an official community playlist")
-            url = "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=15&playlistId=" + playlist + "&key=" + key
+            url = youtube_feed_url(workspace)
             req = Request(url, headers={"User-Agent": "AIM-OSI/0.1"})
             with urlopen(req, timeout=12) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+                data = resp.read(1_000_000)
             stamp = now_iso()
+            videos = parse_youtube_feed(data, community_id)
+            # Shared CNCF channel feeds contain many projects; retain only videos explicitly
+            # about the selected project to avoid presenting unrelated community content.
+            if workspace.get("youtube_channel") == "UCvqbFHwN-nwalWPjPUKpvTA":
+                terms = workspace.get("youtube_terms", [])
+                videos = [v for v in videos if any(term.casefold() in (v["title"] + " " + v["summary"]).casefold() for term in terms)]
             with db() as c:
-                for item in data.get("items", []):
-                    snippet = item.get("snippet", {})
-                    vid = item.get("snippet", {}).get("resourceId", {}).get("videoId")
-                    if not vid: continue
-                    c.execute("INSERT INTO signals(id,community_id,project_id,kind,title,summary,url,published_at,source,source_id,retrieved_at,demo,last_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET community_id=excluded.community_id,title=excluded.title,summary=excluded.summary,url=excluded.url,published_at=excluded.published_at,source=excluded.source,retrieved_at=excluded.retrieved_at,last_updated_at=excluded.last_updated_at", (f"youtube-{community_id}-{vid}", community_id, None, "video", snippet.get("title", "Video"), snippet.get("description", ""), f"https://www.youtube.com/watch?v={vid}", snippet.get("publishedAt"), "https://developers.google.com/youtube/v3/docs/playlistItems/list", vid, stamp, snippet.get("publishedAt")))
+                for item in videos:
+                    c.execute("INSERT INTO signals(id,community_id,project_id,kind,title,summary,url,published_at,source,source_id,retrieved_at,demo,last_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,summary=excluded.summary,url=excluded.url,published_at=excluded.published_at,source=excluded.source,retrieved_at=excluded.retrieved_at,last_updated_at=excluded.last_updated_at", (item["id"], community_id, None, "video", item["title"], item["summary"], item["url"], item["published_at"], url, item["source_id"], stamp, item["published_at"]))
                     count += 1
         else:
             raise ValueError("Unknown connector")
@@ -302,7 +343,7 @@ def integration_status(community_id: str = "kubernetes") -> list[dict]:
     configs = [
         (f"github:{community_id}", "GitHub", "configured" if os.getenv("GITHUB_TOKEN") else "public", "https://api.github.com"),
         ("kubernetes-community:kubernetes" if community_id == "kubernetes" else "kubernetes-community:not-applicable", "Kubernetes metadata" if community_id == "kubernetes" else "Community metadata", "ready" if community_id == "kubernetes" else "not configured", "https://github.com/kubernetes/community/blob/master/sigs.yaml" if community_id == "kubernetes" else workspace["source_url"]),
-        (f"youtube:{community_id}", "YouTube", "configured" if os.getenv("YOUTUBE_API_KEY") and os.getenv("YOUTUBE_PLAYLIST_ID") else "not configured", "https://developers.google.com/youtube/v3"),
+        (f"youtube:{community_id}", "YouTube", "official channel feed" if workspace.get("youtube_channel") or workspace.get("youtube_user") else "not configured", workspace.get("youtube_url")),
         (f"calendar:{community_id}", "Public calendars", "links only" if community_id == "kubernetes" else "not configured", "https://github.com/kubernetes/community" if community_id == "kubernetes" else None),
         ("rss", "RSS / feeds", "not configured", None),
         ("summaries", "AI summaries", "factual fallback", None),
@@ -373,7 +414,7 @@ class Handler(BaseHTTPRequestHandler):
         data=json.dumps(value,ensure_ascii=False).encode()
         self.send_response(code); self.send_header("Content-Type","application/json; charset=utf-8"); self.send_header("Content-Length",str(len(data))); self.send_header("Cache-Control","no-store"); self.end_headers(); self.wfile.write(data)
     def add_security_headers(self, mime: str, length: int):
-        self.send_header("Content-Type",mime); self.send_header("Content-Length",str(length)); self.send_header("X-Content-Type-Options","nosniff"); self.send_header("X-Frame-Options","DENY"); self.send_header("Referrer-Policy","strict-origin-when-cross-origin"); self.send_header("Content-Security-Policy","default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'")
+        self.send_header("Content-Type",mime); self.send_header("Content-Length",str(length)); self.send_header("X-Content-Type-Options","nosniff"); self.send_header("X-Frame-Options","DENY"); self.send_header("Referrer-Policy","strict-origin-when-cross-origin"); self.send_header("Content-Security-Policy","default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' https: data:; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://github.com")
     def do_GET(self):
         parsed=urlparse(self.path)
         if parsed.path == "/health": return self.send_json(200,{"status":"ok","time":now_iso()})
