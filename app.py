@@ -293,7 +293,7 @@ def sync_connector(name: str) -> dict:
             # about the selected project to avoid presenting unrelated community content.
             if workspace.get("youtube_channel") == "UCvqbFHwN-nwalWPjPUKpvTA":
                 terms = workspace.get("youtube_terms", [])
-                videos = [v for v in videos if any(term.casefold() in (v["title"] + " " + v["summary"]).casefold() for term in terms)]
+                videos = [v for v in videos if any(term.casefold() in v["title"].casefold() for term in terms)]
             with db() as c:
                 for item in videos:
                     c.execute("INSERT INTO signals(id,community_id,project_id,kind,title,summary,url,published_at,source,source_id,retrieved_at,demo,last_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,summary=excluded.summary,url=excluded.url,published_at=excluded.published_at,source=excluded.source,retrieved_at=excluded.retrieved_at,last_updated_at=excluded.last_updated_at", (item["id"], community_id, None, "video", item["title"], item["summary"], item["url"], item["published_at"], url, item["source_id"], stamp, item["published_at"]))

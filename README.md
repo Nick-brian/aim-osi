@@ -25,7 +25,7 @@ Optional GitHub sign-in requires these Vercel environment variables:
 
 Create a GitHub OAuth App with the callback URL above. The app requests only `read:user`, stores a signed, HTTP-only profile session, and does not retain the OAuth access token. Public GitHub data can be read without a user login; `GITHUB_TOKEN` is optional and increases API rate limits.
 
-The YouTube connector reads public official-channel Atom feeds; it requires no YouTube API key. Video results are limited to the previous seven days. A project that has no clearly identified official channel uses the CNCF channel with title/description filtering; the source channel is always linked and the embedded YouTube player remains subject to the video's embed settings.
+The YouTube connector reads public official-channel Atom feeds; it requires no YouTube API key. Video results are limited to the previous seven days. A project that has no clearly identified official channel uses the CNCF channel with title filtering; the source channel is always linked and the embedded YouTube player remains subject to the video's embed settings.
 
 ## Features and routes
 
