@@ -101,10 +101,12 @@ class handler(BaseHTTPRequestHandler):
             return self.json_response(500, body)
 
     def handle_get(self):
-        core.init_db()
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         route = query.get("route", [self.route_override or parsed.path])[0]
+        if query.get("probe") == ["1"]:
+            return self.json_response(200, {"diagnostic": "index handler active", "request_path": parsed.path, "selected_route": route})
+        core.init_db()
         if route in {"/api/auth/github", "/api/auth/callback", "/api/auth/logout"}:
             return self.github_auth(parsed, route)
         if route == "/api/me":
