@@ -4,8 +4,8 @@
     "api/index.py": { "maxDuration": 60 }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api?path=/api/:path*" },
-    { "source": "/health", "destination": "/api?path=/health" }
+    { "source": "/api/:path*", "destination": "/api?route=/api/:path*" },
+    { "source": "/health", "destination": "/api?route=/health" }
   ],
   "headers": [
     {
