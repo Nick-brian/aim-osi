@@ -89,6 +89,18 @@ class handler(BaseHTTPRequestHandler):
         return self.json_response(404, {"error":"Not found"})
 
     def do_GET(self):
+        try:
+            return self.handle_get()
+        except Exception as exc:
+            print(f"AIM OSI GET failure {self.path}: {type(exc).__name__}: {exc}")
+            query = parse_qs(urlparse(self.path).query)
+            detail = f"{type(exc).__name__}: {str(exc)[:240]}" if query.get("debug") == ["1"] else None
+            body = {"error": "API request failed"}
+            if detail:
+                body["diagnostic"] = detail
+            return self.json_response(500, body)
+
+    def handle_get(self):
         core.init_db()
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
