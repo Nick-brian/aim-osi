@@ -84,6 +84,12 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(parsed[0]["source_id"], "abcdefghijk")
         self.assertEqual(parsed[0]["url"], "https://www.youtube.com/watch?v=abcdefghijk")
 
+    def test_vercel_api_rewrite_targets_python_function_route(self):
+        config = json.loads((Path(app.ROOT) / "vercel.json").read_text())
+        rewrites = {rule["source"]: rule["destination"] for rule in config["rewrites"]}
+        self.assertEqual(rewrites["/api/:path*"], "/api?path=/api/:path*")
+        self.assertEqual(rewrites["/health"], "/api?path=/health")
+
     def test_github_adapter_normalizes_sources_and_is_idempotent(self):
         def fixture(url):
             if "/pulls?" in url:
