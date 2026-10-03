@@ -93,19 +93,12 @@ class handler(BaseHTTPRequestHandler):
             return self.handle_get()
         except Exception as exc:
             print(f"AIM OSI GET failure {self.path}: {type(exc).__name__}: {exc}")
-            query = parse_qs(urlparse(self.path).query)
-            detail = f"{type(exc).__name__}: {str(exc)[:240]}" if query.get("debug") == ["1"] else None
-            body = {"error": "API request failed"}
-            if detail:
-                body["diagnostic"] = detail
-            return self.json_response(500, body)
+            return self.json_response(500, {"error": "API request failed"})
 
     def handle_get(self):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         route = query.get("route", [self.route_override or parsed.path])[0]
-        if query.get("probe") == ["1"]:
-            return self.json_response(200, {"diagnostic": "index handler active", "request_path": parsed.path, "selected_route": route})
         core.init_db()
         if route in {"/api/auth/github", "/api/auth/callback", "/api/auth/logout"}:
             return self.github_auth(parsed, route)

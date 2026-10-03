@@ -89,12 +89,9 @@ class AppApiTests(unittest.TestCase):
         self.assertEqual(config["functions"], {"api/**/*.py": {"maxDuration": 60}})
         rewrites = {rule["source"]: rule["destination"] for rule in config["rewrites"]}
         self.assertEqual(rewrites, {"/health": "/api/health"})
-        for name in ("workspaces", "digest", "automation", "integrations", "communities", "projects", "activity", "meetings", "events", "issues", "sync", "me"):
+        for name in ("workspaces", "overview", "digest", "automation", "integrations", "communities", "projects", "activity", "meetings", "events", "issues", "sync", "me"):
             module = __import__(f"api.{name}", fromlist=["handler"])
             self.assertEqual(module.handler.route_override, f"/api/{name}")
-        from http.server import BaseHTTPRequestHandler
-        from api.overview import handler as overview_handler
-        self.assertTrue(issubclass(overview_handler, BaseHTTPRequestHandler))
 
     def test_github_adapter_normalizes_sources_and_is_idempotent(self):
         def fixture(url):
