@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler
 
 
 class handler(BaseHTTPRequestHandler):
+    route_override = None
+
     def log_message(self, fmt, *args):
         print(f"{self.command} {urlparse(self.path).path} {args[1] if len(args)>1 else ''}")
 
@@ -90,7 +92,7 @@ class handler(BaseHTTPRequestHandler):
         core.init_db()
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
-        route = query.get("route", [parsed.path])[0]
+        route = query.get("route", [self.route_override or parsed.path])[0]
         if route in {"/api/auth/github", "/api/auth/callback", "/api/auth/logout"}:
             return self.github_auth(parsed, route)
         if route == "/api/me":
@@ -118,7 +120,7 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         core.init_db()
         parsed = urlparse(self.path)
-        route = parse_qs(parsed.query).get("route", [parsed.path])[0]
+        route = parse_qs(parsed.query).get("route", [self.route_override or parsed.path])[0]
         if route != "/api/sync":
             return self.json_response(404, {"error": "Not found"})
         length = int(self.headers.get("Content-Length", "0"))

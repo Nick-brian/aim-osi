@@ -86,9 +86,12 @@ class AppApiTests(unittest.TestCase):
 
     def test_vercel_api_rewrite_targets_python_function_route(self):
         config = json.loads((Path(app.ROOT) / "vercel.json").read_text())
+        self.assertEqual(config["functions"], {"api/**/*.py": {"maxDuration": 60}})
         rewrites = {rule["source"]: rule["destination"] for rule in config["rewrites"]}
-        self.assertEqual(rewrites["/api/:path*"], "/api?route=/api/:path*")
-        self.assertEqual(rewrites["/health"], "/api?route=/health")
+        self.assertEqual(rewrites, {"/health": "/api/health"})
+        for name in ("workspaces", "overview", "digest", "automation", "integrations", "communities", "projects", "activity", "meetings", "events", "issues", "sync", "me"):
+            module = __import__(f"api.{name}", fromlist=["handler"])
+            self.assertEqual(module.handler.route_override, f"/api/{name}")
 
     def test_github_adapter_normalizes_sources_and_is_idempotent(self):
         def fixture(url):

@@ -1,11 +1,10 @@
 {
   "outputDirectory": "public",
   "functions": {
-    "api/index.py": { "maxDuration": 60 }
+    "api/**/*.py": { "maxDuration": 60 }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api?route=/api/:path*" },
-    { "source": "/health", "destination": "/api?route=/health" }
+    { "source": "/health", "destination": "/api/health" }
   ],
   "headers": [
     {
